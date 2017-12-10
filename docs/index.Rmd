@@ -1,0 +1,134 @@
+--- 
+title: "공간 데이터 분석 in R" 
+author: "Sung" 
+date: "2017-12-10" 
+output: 
+  html_document: 
+    toc: true 
+    toc_float: true 
+    code_folding: "show" 
+mainfont: NanumGothic 
+fontsize: 12pt 
+lang: Korean 
+--- 
+
+```{r include=F} 
+# global option 
+knitr::opts_chunk$set( 
+  comment = "##>", 
+  collapse = T, 
+  eval = T, 
+  tidy = F, 
+  message = F, 
+  warning = F, 
+  fig.width = 4, 
+  fig.height = 4 
+) 
+
+# global option 
+options("scipen" = 100, digits = 3) 
+``` 
+---   
+
+### **공간 데이터** 
+
+공간 데이터(spatial data)는 지형지물(지구상의 자연적,인공적 형상)의 지리적 위치와 특성에 관한 정보. 지리정보시스템에서 사용하는 데이터를 말함 
+
+- 지리 좌표계(Geographic coordinate system): 지구 및 천체에 지점을 나타내기 위한 위/경도 좌표계 ([링크](https://ko.wikipedia.org/w/index.php?oldid=19775468)) 
+
+- 데이터 형태: 폴리곤 형태로 `.shp`파일로 제공 되고, 한국  전국의 시도, 시군구, 읍면동, 리 경계 데이터를 제공 [행안부_주소](https://www.juso.go.kr/addrlink/devLayerRequestWrite.do), [지오서비스](http://www.gisdeveloper.co.kr/?p=2332)) 
+
+- 분석 도구: `ArcGIS`, `QGIS`, `R` 등이 있고 `QGIS`와 `R`은 오픈소스임 
+
+
+### **주요 좌표계** 
+
+좌표계는 좌표계 코드(EPSG)와 문법으로 표현 가능 ([추가정보](https://mgimond.github.io/Spatial/coordinate-systems-in-r.html)) 
+
+- WGS84 경위도: GPS가 사용하는 좌표계 
+    - EPSG:4326, EPSG:4166 (Korean 1995) 
+    - +proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs  
+
+- UTM-K(GRS-80) 좌표계 
+    - EPSG:5179 
+    - +proj=tmerc +lat_0=38 +lon_0=127.5 +k=0.9996 +x_0=1000000 +y_0=2000000 +ellps=GRS80 +units=m +no_defs 
+
+- UTM-K (Bessel): 새주소지도에서 사용 중 
+    - EPSG:5178 
+    - +proj=tmerc +lat_0=38 +lon_0=127.5 +k=0.9996 +x_0=1000000 +y_0=2000000 +ellps=bessel +units=m +no_defs +towgs84=-115.80,474.99,674.11,1.16,-2.31,-1.63,6.43 
+
+- 그외 좌표계: http://www.osgeo.kr/17,  
+
+- 참고: https://mrchypark.wordpress.com/2014/10/23/%ec%a2%8c%ed%91%9c-%ec%a0%95%eb%b3%b4-%eb%b3%80%ed%99%98/ 
+
+
+### **위치 데이터 불러오기** 
+
+- 각 변수의 타입에 맞게 데이터 불러오기 
+    - `st_crs(shp_data)$proj4string`를 통해 좌표계를 알 수 있음 
+    - 국가에서 제공하는 파일의 인코딩은 `euc-kr`이라서 인코딩을 명시해야 함 
+     
+    ```{r} 
+    # load package 
+    library(tidyverse) 
+    library(sf) 
+     
+    # 시도 shp 
+    sido <- st_read("../data/CTPRVN_201703/TL_SCCO_CTPRVN.shp", stringsAsFactors = F, quiet = T, options = "encoding=euc-kr")   
+    glimpse(sido)  
+    st_crs(sido)$proj4string  
+    ``` 
+
+- shp 파일에서 지도 그리기 
+    ```{r, fig = T} 
+    plot(sido[3]) 
+    ``` 
+
+
+### **공간 결합** 
+
+- 데이터의 위치가 동일한 경우를 매핑하여 데이터 속성을 결합하는 것으로 `sql`에서 `join`을 할 때 사용하는 매핑컬럼을 좌표로 하는 것과 비슷함 
+    - 아래 결과에서 `point_sf`에 시도 컬럼(`CTP_KOR_NM`)이 추가된 것을 볼 수 있다. 
+
+    ```{r} 
+    # 임의의 위치를 지정 
+    df <- data.frame(id = c("a", "b"),  
+                     lon = c(981731, 945989),  
+                     lat = c(1932086, 1942347))  
+
+    # 데이터프레임에 좌표로 변환 
+    point_sf <- st_as_sf(df, coords = c("lon", "lat"), crs = st_crs(sido)$proj4string)  
+    point_sf 
+     
+    # 시도 join 
+    point_sf <- st_join(point_sf, sido[, c(3, 4)]) 
+     
+    glimpse(point_sf) 
+    ``` 
+     
+    - 지도에서 좌표 확인 
+     
+    ```{r, fig=T} 
+    plot(sido[3]) 
+    plot(point_sf$geometry, add = T, pch = '#', col = 'hotpink') 
+    ``` 
+     
+    - `ggmap`을 통한 지도에서 좌표 확인 
+     
+    ```{r, fig=T, eval = F} 
+    library(ggmap) 
+     
+    # 좌표 변경 
+    point_sf_wgs84 <- st_transform(point_sf, crs = "+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs") 
+     
+    get_googlemap("seoul", zoom = 10, maptype = "hybrid") %>% ggmap(extent = "device") + 
+        geom_point(data = point_sf_wgs84) 
+
+    ``` 
+     
+### 참고 
+- 참고 사이트 
+    - http://strimas.com/r/tidy-sf/ 
+    - https://cran.r-project.org/web/packages/sf/vignettes/sf1.html 
+- 온라인 서적 
+    - https://bookdown.org/robinlovelace/geocompr/spatial-data-operations.html
